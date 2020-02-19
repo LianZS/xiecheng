@@ -1,9 +1,26 @@
 import requests
 import re
-from urllib import parse
 import abc
+from enum import Enum
+from urllib import parse
 from bs4 import BeautifulSoup
 from types import GeneratorType
+
+
+class ListView(object):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def show_vacations_list(self, vacations_list):
+        pass
+
+    @abc.abstractmethod
+    def next_page(self):
+        pass
+
+    @abc.abstractmethod
+    def before_page(self):
+        pass
 
 
 class SingleComment(object):
@@ -20,7 +37,7 @@ class SingleComment(object):
             {'author': self.author, 'star': self.star, 'date_published': self.date_published, 'comment': self.comment})
 
 
-class CommentView(object):
+class CommentView(ListView):
     """
     获取景区评论数据
     """
@@ -85,10 +102,18 @@ class CommentView(object):
                 yield SingleComment(author, star, comment, date_published)
 
     def next_page(self):
-        """翻页功能"""
+
         self.page_now += 1
         return self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
                                          self.resource_id)
+
+    def before_page(self):
+        self.page_now -= 1
+        return self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
+                                         self.resource_id)
+
+    def show_vacations_list(self, vacations_list):
+        pass
 
 
 class TabInfo(object):
@@ -126,11 +151,23 @@ class AttractionInfo(object):
         return "{name:30}{url:20}".format_map({'name': self.name, 'url': self.url})
 
 
+class DataType(Enum):
+    ATTRACTION = '景点'
+    DESTINATION = '目的地'
+    ACCOMMODATION = '住宿'
+    FOOD = '美食'
+    SHOPPING = '购物'
+    TRAFFIC = '交通'
+    QUESTION = '问答'
+    TRAVEL = '游记'
+
+
 class CityVacationsAdView(object):
     """
     获取城市景点
     """
-    CityVacationsView = None
+
+    ResponseView = None
 
     class ResponseInfo(object):
         """
@@ -192,34 +229,33 @@ class CityVacationsAdView(object):
             tab = temp.group(1)  # 标签
             result_num = int(temp.group(2))  # 此类标签搜索结果数目
             tab_map[tab] = TabInfo(tab, href, result_num)
-
         return self.ResponseInfo(response, tab_map, domain)
+
+    def send_search_request(self, search_keyword: str):
+        """
+        发送搜索请求
+        :param search_keyword: 搜索关键字
+        :return:
+        """
+        self.ResponseView = self.__get_request_response__(search_keyword)
 
     def get_search_result(self, search_keyword: str):
         """
         获取搜索结果
         :return:
         """
-        return self.__get_request_response__(search_keyword)
+        if self.ResponseView is None:
+            self.ResponseView = self.__get_request_response__(search_keyword)
 
-    def select_tab(self, tab):
-        pass
+        return self.ResponseView
 
+    def select_tab(self, tab: Enum):
+        """
 
-class ListView(object):
-    __metaclass__ = abc.ABCMeta
-
-    @abc.abstractmethod
-    def show_vacations_list(self, vacations_list):
-        pass
-
-    @abc.abstractmethod
-    def next_page(self):
-        pass
-
-    @abc.abstractmethod
-    def before_page(self):
-        pass
+        :param tab: 获取某类数据
+        :return:
+        """
+        return self.ResponseView.tab_map.get(tab.value)
 
 
 class AttractionListView(ListView):
@@ -236,22 +272,23 @@ class AttractionListView(ListView):
             'cookie': cookie
         }
 
-    def get_vacations_url_entrance(self, search_keyword: str):
+    def get_vacation_list_view(self, search_keyword: str):
         """
         搜索关键词相关的景点
         :param search_keyword:
         :return:
         """
-        response_info = CityVacationsAdView().get_search_result(search_keyword)
-        vacation_info: TabInfo = response_info.tab_map.get('景点')
+        engine = CityVacationsAdView()
+        engine.send_search_request(search_keyword)
+        vacation_info: TabInfo = engine.select_tab(DataType.ATTRACTION)
         url = vacation_info.url_entrance
         res = parse.urlparse(url)
         self.__request_url = ''.join([res.scheme, "://", res.netloc, res.path, '/?'])
         self.__keyword_query = parse.parse_qs(res.query)['query'][0]
 
-        return self.__get_vacations_list__()
+        return self.__get_vacations_list_detail__()
 
-    def __get_vacations_list__(self) -> GeneratorType:
+    def __get_vacations_list_detail__(self) -> GeneratorType:
         """
         获取相关景区列表
         :param url:
@@ -292,27 +329,28 @@ class AttractionListView(ListView):
         pass
 
     def next_page(self):
+
         self.__page += 1
-        return self.__get_vacations_list__()
+        return self.__get_vacations_list_detail__()
 
     def before_page(self):
         self.__page -= 1
-        return self.__get_vacations_list__()
+        return self.__get_vacations_list_detail__()
 
 
 # keyword = input("搜索城市/景点/游记/问答/住宿/用户\n")
-# keyword = '广州'
-# a = AttractionListView()
-# for i in a.get_vacations_url_entrance(keyword):
-#     print(i)
+keyword = '广州'
+a = AttractionListView()
+for i in a.get_vacation_list_view(keyword):
+    print(i)
 # for i in a.next_page_list():
 #     print(i)
 # print("搜索结果：\n")
-u = 'https://you.ctrip.com/sight/guangzhou152/107540.html'
-g = CommentView()
-for i in g.get_comment_detail(u):
-    print(i)
-for i in g.next_page():
-    print(i)
-for i in g.next_page():
-    print(i)
+# u = 'https://you.ctrip.com/sight/guangzhou152/107540.html'
+# g = CommentView()
+# for i in g.get_comment_detail(u):
+#     print(i)
+# for i in g.next_page():
+#     print(i)
+# for i in g.next_page():
+#     print(i)
