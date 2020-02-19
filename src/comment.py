@@ -1,6 +1,7 @@
 import requests
 import re
 from urllib import parse
+import abc
 from bs4 import BeautifulSoup
 from types import GeneratorType
 
@@ -100,11 +101,15 @@ class AttractionInfo(object):
         self.url = url
         self.name = name
 
+    def __str__(self):
+        return "{name:30}{url:20}".format_map({'name': self.name, 'url': self.url})
+
 
 class CityVacationsAdView(object):
     """
     获取城市景点
     """
+    CityVacationsView = None
 
     class ResponseInfo(object):
         """
@@ -169,18 +174,72 @@ class CityVacationsAdView(object):
 
         return self.ResponseInfo(response, tab_map, domain)
 
+    def get_search_result(self, search_keyword: str):
+        """
+        获取搜索结果
+        :return:
+        """
+        return self.__get_request_response__(search_keyword)
+
+    def select_tab(self, tab):
+        pass
+
+
+class ListView(object):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def show_vacations_list(self, vacations_list):
+        pass
+
+    @abc.abstractmethod
+    def next_page_list(self):
+        pass
+
+
+class AttractionListView(ListView):
+    __page = 1
+    __keyword_query = None
+    __request_url = None
+
+    def __init__(self, user_agent=None, cookie=None):
+        if user_agent is None:
+            user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko)" \
+                         " Chrome/69.0.3497.100 Safari/537.36"
+        self.headers = {
+            'user-agent': user_agent,
+            'cookie': cookie
+        }
+
     def get_vacations_url_entrance(self, search_keyword: str):
         """
         搜索关键词相关的景点
         :param search_keyword:
         :return:
         """
-        response_info = self.__get_request_response__(search_keyword)
+        response_info = CityVacationsAdView().get_search_result(search_keyword)
         vacation_info: TabInfo = response_info.tab_map.get('景点')
         url = vacation_info.url_entrance
-        self.get_vacations_list(url)
+        res = parse.urlparse(url)
+        request_url = ''.join([res.scheme, "://", res.netloc, res.path, '/?'])
+        self.__keyword_query = parse.parse_qs(res.query)['query'][0]
 
-    def get_vacations_list(self, url) -> GeneratorType:
+        return self.__get_vacations_list__(request_url, search_keyword)
+
+    def __get_vacations_list__(self, url: str, search_keyword: str) -> GeneratorType:
+        """
+        获取相关景区列表
+        :param url:
+        :return:
+        """
+        parameters = {
+            'query': search_keyword,
+            'isAnswered': '',
+            'isRecommended': '',
+            'publishDate': '',
+            'PageNo': self.__page
+        }
+        url = url + parse.urlencode(parameters)
         response = requests.get(url=url, headers=self.headers)
         soup = BeautifulSoup(response.text, 'lxml')
         ul_tag = soup.find(name='ul', class_='jingdian-ul')
@@ -204,15 +263,17 @@ class CityVacationsAdView(object):
             attractions_info = ''.join(info_list)  # 景区信息如：广州广州塔
             yield AttractionInfo(url, attractions_info)
 
-    def get_search_result(self, search_keyword: str):
-        """
-        获取搜索结果
-        :return:
-        """
-        self.get_vacations_url_entrance(search_keyword)
+    def show_vacations_list(self, vacations_list):
+        pass
+
+    @classmethod
+    def next_page_list(cls):
+        cls.__page += 1
+        cls.__get_vacations_list__()
 
 
 # keyword = input("搜索城市/景点/游记/问答/住宿/用户\n")
-keyword = '广州白云山'
-CityVacationsAdView().get_search_result(keyword)
+keyword = '广州'
+for i in AttractionListView().get_vacations_url_entrance(keyword):
+    print(i)
 # print("搜索结果：\n")
