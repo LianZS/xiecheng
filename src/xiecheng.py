@@ -20,10 +20,15 @@ class SingleComment(object):
             {'author': self.author, 'star': self.star, 'date_published': self.date_published, 'comment': self.comment})
 
 
-class GetComment(object):
+class CommentView(object):
     """
     获取景区评论数据
     """
+    poi_id = 1
+    district_name = ''
+    district_id = 1
+    page_now = 1
+    resource_id = 1
 
     def __init__(self, user_agent=None, cookie=None):
         if user_agent is None:
@@ -34,8 +39,18 @@ class GetComment(object):
             'cookie': cookie
         }
 
-    def get_comment_view(self, poi_id: int, district_id: int, district_name: str, page_now: int,
-                         resource_id: int) -> GeneratorType:
+    def get_comment_detail(self, url):
+        response = requests.get(url=url, headers=self.headers)
+        self.poi_id = int(re.search('poiid\D+(\d+)"', response.text).group(1))
+        self.district_name = re.search('sight/([a-zA-Z]+)\d', url).group(1).capitalize()
+        self.district_id = int(re.search('sight/[a-zA-Z]+(\d+)\D', url).group(1))
+        self.resource_id = int(re.search('\d+/(\d+)\Shtml', url).group(1))
+        self.page_now = 1
+        return self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
+                                         self.resource_id)
+
+    def __get_comment_view__(self, poi_id: int, district_id: int, district_name: str, page_now: int,
+                             resource_id: int) -> GeneratorType:
         """
 
         获取评论数据，包括作者,评论内容，评分，评论时间
@@ -68,6 +83,12 @@ class GetComment(object):
                 date_published: str = comment_single.find(name='em', attrs={'itemprop': 'datePublished'}).text
                 star: int = int(re.match('\D+(\d+)', star).group(1)) / 20
                 yield SingleComment(author, star, comment, date_published)
+
+    def next_page(self):
+        """翻页功能"""
+        self.page_now += 1
+        return self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
+                                         self.resource_id)
 
 
 class TabInfo(object):
@@ -193,7 +214,11 @@ class ListView(object):
         pass
 
     @abc.abstractmethod
-    def next_page_list(self):
+    def next_page(self):
+        pass
+
+    @abc.abstractmethod
+    def before_page(self):
         pass
 
 
@@ -221,25 +246,25 @@ class AttractionListView(ListView):
         vacation_info: TabInfo = response_info.tab_map.get('景点')
         url = vacation_info.url_entrance
         res = parse.urlparse(url)
-        request_url = ''.join([res.scheme, "://", res.netloc, res.path, '/?'])
+        self.__request_url = ''.join([res.scheme, "://", res.netloc, res.path, '/?'])
         self.__keyword_query = parse.parse_qs(res.query)['query'][0]
 
-        return self.__get_vacations_list__(request_url, search_keyword)
+        return self.__get_vacations_list__()
 
-    def __get_vacations_list__(self, url: str, search_keyword: str) -> GeneratorType:
+    def __get_vacations_list__(self) -> GeneratorType:
         """
         获取相关景区列表
         :param url:
         :return:
         """
         parameters = {
-            'query': search_keyword,
+            'query': self.__keyword_query,
             'isAnswered': '',
             'isRecommended': '',
             'publishDate': '',
             'PageNo': self.__page
         }
-        url = url + parse.urlencode(parameters)
+        url = self.__request_url + parse.urlencode(parameters)
         response = requests.get(url=url, headers=self.headers)
         soup = BeautifulSoup(response.text, 'lxml')
         ul_tag = soup.find(name='ul', class_='jingdian-ul')
@@ -266,14 +291,28 @@ class AttractionListView(ListView):
     def show_vacations_list(self, vacations_list):
         pass
 
-    @classmethod
-    def next_page_list(cls):
-        cls.__page += 1
-        cls.__get_vacations_list__()
+    def next_page(self):
+        self.__page += 1
+        return self.__get_vacations_list__()
+
+    def before_page(self):
+        self.__page -= 1
+        return self.__get_vacations_list__()
 
 
 # keyword = input("搜索城市/景点/游记/问答/住宿/用户\n")
-keyword = '广州'
-for i in AttractionListView().get_vacations_url_entrance(keyword):
-    print(i)
+# keyword = '广州'
+# a = AttractionListView()
+# for i in a.get_vacations_url_entrance(keyword):
+#     print(i)
+# for i in a.next_page_list():
+#     print(i)
 # print("搜索结果：\n")
+u = 'https://you.ctrip.com/sight/guangzhou152/107540.html'
+g = CommentView()
+for i in g.get_comment_detail(u):
+    print(i)
+for i in g.next_page():
+    print(i)
+for i in g.next_page():
+    print(i)
