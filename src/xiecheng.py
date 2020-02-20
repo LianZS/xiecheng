@@ -11,7 +11,7 @@ class ListView(object):
     __metaclass__ = abc.ABCMeta
 
     @abc.abstractmethod
-    def show_vacations_list(self, vacations_list):
+    def show_current_view(self):
         pass
 
     @abc.abstractmethod
@@ -41,11 +41,12 @@ class CommentView(ListView):
     """
     获取景区评论数据
     """
-    poi_id = 1
-    district_name = ''
-    district_id = 1
-    page_now = 1
-    resource_id = 1
+    poi_id: int = 1
+    district_name: str = ''
+    district_id: int = 1
+    page_now: int = 1
+    resource_id: int = 1
+    current_view: GeneratorType = None
 
     def __init__(self, user_agent=None, cookie=None):
         if user_agent is None:
@@ -57,14 +58,20 @@ class CommentView(ListView):
         }
 
     def get_comment_detail(self, url):
+        """
+        解析景点网页链接
+        :param url:
+        :return:
+        """
         response = requests.get(url=url, headers=self.headers)
         self.poi_id = int(re.search('poiid\D+(\d+)"', response.text).group(1))
         self.district_name = re.search('sight/([a-zA-Z]+)\d', url).group(1).capitalize()
         self.district_id = int(re.search('sight/[a-zA-Z]+(\d+)\D', url).group(1))
         self.resource_id = int(re.search('\d+/(\d+)\Shtml', url).group(1))
         self.page_now = 1
-        return self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
-                                         self.resource_id)
+        self.current_view = self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
+                                                      self.resource_id)
+        return self.current_view
 
     def __get_comment_view__(self, poi_id: int, district_id: int, district_name: str, page_now: int,
                              resource_id: int) -> GeneratorType:
@@ -104,16 +111,22 @@ class CommentView(ListView):
     def next_page(self):
 
         self.page_now += 1
-        return self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
-                                         self.resource_id)
+        self.current_view = self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
+                                                      self.resource_id)
+        return self.current_view
 
     def before_page(self):
         self.page_now -= 1
-        return self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
-                                         self.resource_id)
+        self.current_view = self.__get_comment_view__(self.poi_id, self.district_id, self.district_name, self.page_now,
+                                                      self.resource_id)
+        return self.current_view
 
-    def show_vacations_list(self, vacations_list):
-        pass
+    def show_current_view(self):
+        if self.current_view is not None:
+            for item in self.current_view:
+                print(item)
+        else:
+            print("None")
 
 
 class TabInfo(object):
@@ -249,7 +262,7 @@ class CityVacationsAdView(object):
 
         return self.ResponseView
 
-    def select_tab(self, tab: Enum):
+    def select_tab(self, tab: DataType):
         """
 
         :param tab: 获取某类数据
@@ -259,11 +272,17 @@ class CityVacationsAdView(object):
 
 
 class AttractionListView(ListView):
-    __page = 1
-    __keyword_query = None
-    __request_url = None
+    """
+    景点模块
+    """
+    page_now: int = 1  # 当前页面数
+    keyword_query: str = None  # 搜索关键词
+    request_url: str = None  # 请求链接
+    current_list_view: GeneratorType = None  # 当前景点列表视图
+    comment_view: CommentView = None  # 评论数据视图
 
-    def __init__(self, user_agent=None, cookie=None):
+    def __init__(self, key_word: str, user_agent=None, cookie=None):
+        self.keyword_query = key_word
         if user_agent is None:
             user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko)" \
                          " Chrome/69.0.3497.100 Safari/537.36"
@@ -283,10 +302,10 @@ class AttractionListView(ListView):
         vacation_info: TabInfo = engine.select_tab(DataType.ATTRACTION)
         url = vacation_info.url_entrance
         res = parse.urlparse(url)
-        self.__request_url = ''.join([res.scheme, "://", res.netloc, res.path, '/?'])
-        self.__keyword_query = parse.parse_qs(res.query)['query'][0]
-
-        return self.__get_vacations_list_detail__()
+        self.request_url = ''.join([res.scheme, "://", res.netloc, res.path, '/?'])
+        self.keyword_query = parse.parse_qs(res.query)['query'][0]
+        self.current_list_view = self.__get_vacations_list_detail__()
+        return self.current_list_view
 
     def __get_vacations_list_detail__(self) -> GeneratorType:
         """
@@ -295,13 +314,13 @@ class AttractionListView(ListView):
         :return:
         """
         parameters = {
-            'query': self.__keyword_query,
+            'query': self.keyword_query,
             'isAnswered': '',
             'isRecommended': '',
             'publishDate': '',
-            'PageNo': self.__page
+            'PageNo': self.page_now
         }
-        url = self.__request_url + parse.urlencode(parameters)
+        url = self.request_url + parse.urlencode(parameters)
         response = requests.get(url=url, headers=self.headers)
         soup = BeautifulSoup(response.text, 'lxml')
         ul_tag = soup.find(name='ul', class_='jingdian-ul')
@@ -325,32 +344,30 @@ class AttractionListView(ListView):
             attractions_info = ''.join(info_list)  # 景区信息如：广州广州塔
             yield AttractionInfo(url, attractions_info)
 
-    def show_vacations_list(self, vacations_list):
-        pass
+    def show_current_view(self):
+        if self.current_list_view is not None:
+            for item in self.current_list_view:
+                print(item)
+        else:
+            self.get_vacation_list_view(self.keyword_query)
+            self.show_current_view()
 
     def next_page(self):
 
-        self.__page += 1
-        return self.__get_vacations_list_detail__()
+        self.page_now += 1
+        self.current_list_view = self.__get_vacations_list_detail__()
+        return self.current_list_view
 
     def before_page(self):
-        self.__page -= 1
-        return self.__get_vacations_list_detail__()
+        self.page_now -= 1
+        self.current_list_view = self.__get_vacations_list_detail__()
+        return self.current_list_view
+
+    def parse_url(self, url):
+        if self.comment_view is None:
+            self.comment_view = CommentView()
+
+        self.comment_view.get_comment_detail(url)
+        return self.comment_view
 
 
-# keyword = input("搜索城市/景点/游记/问答/住宿/用户\n")
-keyword = '广州'
-a = AttractionListView()
-for i in a.get_vacation_list_view(keyword):
-    print(i)
-# for i in a.next_page_list():
-#     print(i)
-# print("搜索结果：\n")
-# u = 'https://you.ctrip.com/sight/guangzhou152/107540.html'
-# g = CommentView()
-# for i in g.get_comment_detail(u):
-#     print(i)
-# for i in g.next_page():
-#     print(i)
-# for i in g.next_page():
-#     print(i)
