@@ -1,4 +1,5 @@
 import xlrd, xlwt, csv, os
+from io import TextIOWrapper
 from enum import Enum
 from xlutils.copy import copy
 
@@ -17,7 +18,7 @@ class FileModel(Enum):
 class ExportFile(object):
     __data_file__ = None  # 文件实例
     row = 0  # 行数
-    worksheet: xlwt.Worksheet = None  # 表
+    worksheet = None  # 表
     add_adjust = False  # 用来判断是否获取过一次行数
 
     def __init__(self, file_name: str, file_type: FileType, write_model: FileModel = FileModel.WB):
@@ -45,8 +46,20 @@ class ExportFile(object):
             elif self.file_type == FileType.XLSX:
                 for c, label in enumerate(data):
                     self.__write_to_xlsx__(self.row, c, label)
-        else:
-            pass
+        elif self.file_type == FileType.CSV:
+            if self.__data_file__ is None:
+                if os.path.exists(self.file_name):
+
+                    if self.write_model == FileModel.ADD:
+                        self.__data_file__ = open(self.file_name, mode='a+', newline='')
+                    elif self.write_model == FileModel.WB:
+                        self.__data_file__ = open(self.file_name, mode='w+', newline='')
+                    self.worksheet = csv.writer(self.__data_file__)
+
+                else:
+                    open(self.file_name, 'x').close()
+                    self.write_to_file(data, sheet_name)
+            self.__write_to_csv__(data)
 
     def add_data(self, data: list, sheet_name=None):
         """
@@ -109,7 +122,7 @@ class ExportFile(object):
         self.worksheet.write(row, colum, label)
         self.row += 1
 
-    def __write_to_csv__(self, row, colum, label):
+    def __write_to_csv__(self, data: list):
         """
         写入xls
         :param row: 第几行
@@ -117,13 +130,36 @@ class ExportFile(object):
         :param label: 数据
         :return:
         """
-        pass
+        self.worksheet.writerow(data)
 
     def save(self):
         """
         保存数据
         :return:
         """
-        self.__data_file__.save(self.file_name)
+        if self.file_type == FileType.XLS or self.file_type == FileType.XLSX:
 
+            self.__data_file__.save(self.file_name)
 
+        elif self.file_type == FileType.CSV:
+            self.__data_file__.close()
+
+    @property
+    def fieldnames(self):
+        return self.__data_file__
+
+    @fieldnames.setter
+    def fieldnames(self, value):
+        """
+
+        :param value: xlwt.Workbook类型或者TextIOWrapper类型
+        :return:
+        """
+        self.__data_file__ = value
+
+    @fieldnames.getter
+    def fieldnames(self):
+        if isinstance(self.__data_file__, TextIOWrapper):
+            return self.__data_file__.name
+        elif isinstance(self.__data_file__, xlwt.Workbook):
+            return self.file_name
