@@ -4,7 +4,7 @@ import abc
 from enum import Enum
 from urllib import parse
 from bs4 import BeautifulSoup
-from types import GeneratorType
+from typing import List
 
 
 class ListView(object):
@@ -46,7 +46,7 @@ class CommentView(ListView):
     district_id: int = 1
     page_now: int = 1
     resource_id: int = 1
-    current_view: GeneratorType = None
+    current_view: List = None
 
     def __init__(self, user_agent=None, cookie=None):
         if user_agent is None:
@@ -64,6 +64,7 @@ class CommentView(ListView):
         :return:
         """
         response = requests.get(url=url, headers=self.headers)
+
         self.poi_id = int(re.search('poiid\D+(\d+)"', response.text).group(1))
         self.district_name = re.search('sight/([a-zA-Z]+)\d', url).group(1).capitalize()
         self.district_id = int(re.search('sight/[a-zA-Z]+(\d+)\D', url).group(1))
@@ -74,7 +75,7 @@ class CommentView(ListView):
         return self.current_view
 
     def __get_comment_view__(self, poi_id: int, district_id: int, district_name: str, page_now: int,
-                             resource_id: int) -> GeneratorType:
+                             resource_id: int) -> List:
         """
 
         获取评论数据，包括作者,评论内容，评分，评论时间
@@ -85,6 +86,7 @@ class CommentView(ListView):
         :param resource_id:景区id
         :return:SingleComment的GeneratorType
         """
+        elements = list()  # 存放评论数据
 
         post_data = {
             'poiID': poi_id,
@@ -99,14 +101,18 @@ class CommentView(ListView):
                                  headers=self.headers)
         soup = BeautifulSoup(response.text, 'lxml')
         sight_commentbox = soup.find(name='div', class_='comment_ctrip')
-        for comment_single in sight_commentbox.children:
-            if len(comment_single) > 2:
-                author: str = comment_single.find(name='a', attrs={'itemprop': 'author'}).text
-                star: str = comment_single.find(name='span', class_='starlist').find(name='span').attrs['style']
-                comment: str = comment_single.find(name='span', class_='heightbox').text
-                date_published: str = comment_single.find(name='em', attrs={'itemprop': 'datePublished'}).text
-                star: int = int(re.match('\D+(\d+)', star).group(1)) / 20
-                yield SingleComment(author, star, comment, date_published)
+        comment_singles = sight_commentbox.find_all(name='div', class_='comment_single')
+        if len(comment_singles) == 0:  # 没有评论数据
+            return elements
+        for single_comment in comment_singles:
+            if len(single_comment) > 2:
+                author: str = single_comment.find(name='a', attrs={'itemprop': 'author'}).text  # 作者
+                star: str = single_comment.find(name='span', class_='starlist').find(name='span').attrs['style']  # 评分
+                comment: str = single_comment.find(name='span', class_='heightbox').text  # 评论
+                date_published: str = single_comment.find(name='em', attrs={'itemprop': 'datePublished'}).text  # 发布日期
+                star: int = int(re.match('\D+(\d+)', star).group(1)) / 20  # 评分转换
+                elements.append(SingleComment(author, star, comment, date_published))
+        return elements
 
     def next_page(self):
 
@@ -122,7 +128,7 @@ class CommentView(ListView):
         return self.current_view
 
     def show_current_view(self):
-        if self.current_view is not None:
+        if self.current_view is not None and len(self.current_view) > 0:
             for item in self.current_view:
                 print(item)
         else:
@@ -278,7 +284,7 @@ class AttractionListView(ListView):
     page_now: int = 1  # 当前页面数
     keyword_query: str = None  # 搜索关键词
     request_url: str = None  # 请求链接
-    current_list_view: GeneratorType = None  # 当前景点列表视图
+    current_list_view: List = None  # 当前景点列表视图
     comment_view: CommentView = None  # 评论数据视图
 
     def __init__(self, key_word: str, user_agent=None, cookie=None):
@@ -307,7 +313,7 @@ class AttractionListView(ListView):
         self.current_list_view = self.__get_vacations_list_detail__()
         return self.current_list_view
 
-    def __get_vacations_list_detail__(self) -> GeneratorType:
+    def __get_vacations_list_detail__(self) -> List:
         """
         获取相关景区列表
         :param url:
@@ -327,6 +333,7 @@ class AttractionListView(ListView):
 
         res = parse.urlparse(response.url)
         domain = ''.join([res.scheme, '://', res.netloc])  # 域名
+        elements = list()
         for li_tag in ul_tag.children:
             if len(li_tag) <= 1:
                 continue
@@ -342,12 +349,13 @@ class AttractionListView(ListView):
                 info_list.append(title)
             info_list.reverse()
             attractions_info = ''.join(info_list)  # 景区信息如：广州广州塔
-            yield AttractionInfo(url, attractions_info)
+            elements.append(AttractionInfo(url, attractions_info))
+        return elements
 
     def show_current_view(self):
         if self.current_list_view is not None:
-            for item in self.current_list_view:
-                print(item)
+            for i, item in enumerate(self.current_list_view, 1):
+                print(i, item)
         else:
             self.get_vacation_list_view(self.keyword_query)
             self.show_current_view()
@@ -370,4 +378,6 @@ class AttractionListView(ListView):
         self.comment_view.get_comment_detail(url)
         return self.comment_view
 
-
+    def parse_url_by_index(self, index):
+        attraction: AttractionInfo = self.current_list_view[index - 1]
+        self.parse_url(attraction.url)
