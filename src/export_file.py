@@ -63,21 +63,21 @@ class ExportFile(object):
                 self.save()
                 return
 
-            book = xlrd.open_workbook(self.file_name)
-            self.__data_file__ = copy(book)  # 完成xlrd对象向xlwt对象转换
-            if sheet_name is None:
-                sheet = book.sheet_by_index(0)
-                self.worksheet = self.__data_file__.get_sheet(0)
-
-            else:
-                try:
-                    sheet = book.sheet_by_name(sheet_name)
-                    self.worksheet = self.__data_file__.get_sheet(sheet_name)
-
-                except xlrd.XLRDError:
+            if self.add_adjust:  # 确保文件只读取复制一次
+                book = xlrd.open_workbook(self.file_name)
+                self.__data_file__ = copy(book)  # 完成xlrd对象向xlwt对象转换
+                if sheet_name is None:
                     sheet = book.sheet_by_index(0)
                     self.worksheet = self.__data_file__.get_sheet(0)
-            if self.add_adjust:
+
+                else:
+                    try:
+                        sheet = book.sheet_by_name(sheet_name)
+                        self.worksheet = self.__data_file__.get_sheet(sheet_name)
+
+                    except xlrd.XLRDError:
+                        sheet = book.sheet_by_index(0)
+                        self.worksheet = self.__data_file__.get_sheet(0)
                 self.row = sheet.nrows  # 获得行数
                 self.add_adjust = False  # 后面的追加操作不能再读取行数了。
 
@@ -127,11 +127,3 @@ class ExportFile(object):
         self.__data_file__.save(self.file_name)
 
 
-e = ExportFile('lian', FileType.XLSX, FileModel.ADD)
-for i in range(10):
-    e.add_data([i])
-
-e.save()
-
-# e.add_data([1, 2, 4, 45, 6])
-# e.save()
