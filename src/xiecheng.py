@@ -1,10 +1,16 @@
 import requests
 import re
 import abc
+import copy
 from enum import Enum
 from urllib import parse
 from bs4 import BeautifulSoup
 from typing import List
+
+
+class KeyWordException(AttributeError):
+    def __init__(self, err="关键词搜索错误"):
+        AttributeError.__init__(self, err)
 
 
 class ListView(object):
@@ -64,8 +70,10 @@ class CommentView(ListView):
         :return:
         """
         response = requests.get(url=url, headers=self.headers)
-
-        self.poi_id = int(re.search('poiid\D+(\d+)"', response.text).group(1))
+        try:
+            self.poi_id = int(re.search('poiid\D+(\d+)"', response.text).group(1))
+        except AttributeError:
+            raise KeyWordException
         self.district_name = re.search('sight/([a-zA-Z]+)\d', url).group(1).capitalize()
         self.district_id = int(re.search('sight/[a-zA-Z]+(\d+)\D', url).group(1))
         self.resource_id = int(re.search('\d+/(\d+)\Shtml', url).group(1))
@@ -286,8 +294,9 @@ class AttractionListView(ListView):
     request_url: str = None  # 请求链接
     current_list_view: List = None  # 当前景点列表视图
     comment_view: CommentView = None  # 评论数据视图
+    last_list_view: List = None  # 上一个景区列表视图
 
-    def __init__(self, key_word: str, user_agent=None, cookie=None):
+    def __init__(self, key_word: str = None, user_agent=None, cookie=None):
         self.keyword_query = key_word
         if user_agent is None:
             user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko)" \
@@ -363,21 +372,40 @@ class AttractionListView(ListView):
     def next_page(self):
 
         self.page_now += 1
+        self.last_list_view = copy.deepcopy(self.current_list_view)
         self.current_list_view = self.__get_vacations_list_detail__()
         return self.current_list_view
 
     def before_page(self):
         self.page_now -= 1
+        self.last_list_view = copy.deepcopy(self.current_list_view)
         self.current_list_view = self.__get_vacations_list_detail__()
         return self.current_list_view
 
     def parse_url(self, url):
         if self.comment_view is None:
             self.comment_view = CommentView()
-
         self.comment_view.get_comment_detail(url)
         return self.comment_view
 
     def parse_url_by_index(self, index):
+        """
+        搜索目标之后如失败了则进行关键词修正，重新搜索，选择
+        :param index: 景区索引，从1开始
+        :return:
+        """
         attraction: AttractionInfo = self.current_list_view[index - 1]
-        self.parse_url(attraction.url)
+        try:
+            self.parse_url(attraction.url)
+
+        except KeyWordException:
+            # 更新视图
+            print("失败！！！失败！！即将重新搜索与之相关的所有信息")
+            self.last_list_view = copy.deepcopy(self.current_list_view)
+            self.keyword_query = attraction.name[:-1]
+            self.get_vacation_list_view(self.keyword_query)
+
+            self.show_current_view()
+
+        return self.comment_view
+
