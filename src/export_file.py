@@ -46,6 +46,7 @@ class ExportFile(object):
             elif self.file_type == FileType.XLSX:
                 for c, label in enumerate(data):
                     self.__write_to_xlsx__(self.row, c, label)
+            self.row += 1
         elif self.file_type == FileType.CSV:
             if self.__data_file__ is None:
                 if os.path.exists(self.file_name):
@@ -135,7 +136,6 @@ class ExportFile(object):
         :return:
         """
         self.__worksheet__.write(row, colum, label)
-        self.row += 1
 
     def __write_to_csv__(self, data: list):
         """
@@ -144,7 +144,6 @@ class ExportFile(object):
         :return:
         """
         self.__worksheet__.writerow(data)
-        self.row += 1
 
     def save(self):
         """
