@@ -13,6 +13,7 @@ class FileType(Enum):
 class FileModel(Enum):
     ADD = 'add_write'
     WB = 'write'
+    RB = 'read'
 
 
 class ExportFile(object):
@@ -63,7 +64,7 @@ class ExportFile(object):
                     return
             self.__write_to_csv__(data)
 
-    def add_data(self, data: list, sheet_name: str = None):
+    def add_row(self, data: list, sheet_name: str = None):
         """
         在文件原有数据基础上进行追加
         :param data: 数据列表
@@ -177,3 +178,15 @@ class ExportFile(object):
             return self.__data_file__.name
         elif isinstance(self.__data_file__, xlwt.Workbook):
             return self.file_name
+
+    def read_rows(self, start_colx=0, end_colx=None, sheetname: str = None):
+        if self.file_type == FileType.XLSX or self.file_type == FileType.XLS:
+            book = xlrd.open_workbook(self.file_name)
+            if sheetname is None:
+                table = book.sheet_by_index(0)
+            else:
+                table = book.sheet_by_name(sheetname)
+            if end_colx is None:
+                end_colx = table.nrows
+            for i in range(start_colx, end_colx):
+                yield table.row_values(i)
