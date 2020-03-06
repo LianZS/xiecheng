@@ -2,6 +2,22 @@ import requests, re, json
 from src.export_file import *
 
 
+class FundTrend(Enum):
+    """
+    涨跌情况表
+    """
+    SUPER_ROSE = [4, 5]
+    VERY_ROSE = [3, 4]
+    MUCH_ROSE = [2, 3]
+    ROSE = [1, 2]
+    SMALL_ROSE = [0, 1]
+    SUPER_FALL = [-4, -5]
+    VERTY_FALL = [-3, -4]
+    MUCH_FALL = [-2, -3]
+    FALL = [-1, -2]
+    SMALL_FALL = [0, -1]
+
+
 class FundCodeInfo(object):
     def __init__(self, c1, c2):
         self.fund_code = c1
@@ -16,8 +32,9 @@ class FundInfo(object):
         }
         self.xlsx = None
 
-    def get_all_fund_base_info(self, url):
-
+    def get_all_fund_base_info(self, url=None):
+        if url is None:
+            url = 'http://fund.10jqka.com.cn/hqcode.js'
         response = requests.get(url=url, headers=self.headers)
         if response.status_code == 200:
             result = re.sub('var hqjson=', '', response.text)
@@ -73,8 +90,25 @@ class FundInfo(object):
                     difference = (now_valuation - yesterday_valuation) / yesterday_valuation * 100
                     sum += difference
                     count += 1
-                if (sum / count) <= low_rate:
-                    return True
+                relative_rate = sum / count
+                if low_rate.value[0] < 0:
+                    if low_rate.value[1] <= relative_rate < low_rate.value[0]:
+                        return (True, relative_rate)
+
+                    else:
+                        return (False, relative_rate)
+                else:
+                    if low_rate.value[0] <= relative_rate < low_rate.value[1]:
+                        return (True, relative_rate)
+
+                    else:
+                        return (False, relative_rate)
+
+
+            else:
+                return (False, None)
+        else:
+            return (False, None)
 
     def write_info(self, info_list: list, filename: str, filetype: FileType):
         if self.xlsx is None:
@@ -87,5 +121,3 @@ class FundInfo(object):
                 self.xlsx.save()
                 max_for = 40
         self.xlsx.save()
-
-
